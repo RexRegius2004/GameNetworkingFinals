@@ -3,8 +3,7 @@ using UnityEngine;
 
 public class PlayerController : NetworkBehaviour
 {
-    public int lives = 3;
-    public int health = 100;
+    public float health = 100;
     public int score = 0;
     public string playerName = "Unnamed";
 
@@ -15,6 +14,8 @@ public class PlayerController : NetworkBehaviour
 
     public float moveSpeed = 5f;
     private Rigidbody rb;
+    private float snailContactTime = 0f;
+    private float scoreTimer = 0f;
 
     void Start()
     {
@@ -23,10 +24,10 @@ public class PlayerController : NetworkBehaviour
         playerName = "Player_" + Random.Range(1, 999);
         rb = GetComponent<Rigidbody>();
 
-        // Spawn snail with ownership
         snailInstance = Instantiate(snailPrefab, transform.position + new Vector3(1, 0, 0), Quaternion.identity);
         snailInstance.GetComponent<NetworkObject>().SpawnWithOwnership(OwnerClientId);
         snailInstance.GetComponent<SnailFollow>().player = this.transform;
+        PlayerHUD.Instance.AssignPlayer(this);
 
         StartCoroutine(serverManager.GetPlayerData());
     }
@@ -35,43 +36,44 @@ public class PlayerController : NetworkBehaviour
     {
         if (!IsOwner) return;
 
-        // Movement input
-        float moveX = Input.GetAxis("Horizontal");
-        float moveZ = Input.GetAxis("Vertical");
-        Vector3 movement = new Vector3(moveX, 0, moveZ);
-        rb.linearVelocity = movement * moveSpeed;
+        float h = Input.GetAxis("Horizontal");
+        float v = Input.GetAxis("Vertical");
+        transform.Translate(new Vector3(h, 0, v) * moveSpeed * Time.deltaTime);
 
-        // Update server position data
-        serverManager.playerData.PlayerPosition = new PlayerPosition
+        if (health > 0)
         {
-            x = transform.position.x,
-            y = transform.position.y,
-            z = transform.position.z
-        };
+            scoreTimer += Time.deltaTime;
+            if (scoreTimer >= 1f)
+            {
+                score++;
+                scoreTimer = 0f;
 
-        // Manual sync to server with space key
-        if (Input.GetKeyDown(KeyCode.Space))
+                ServerManager.Instance.UpdatePlayerScore(score);
+            }
+        }
+
+        if (Time.frameCount % 60 == 0)
         {
-            StartCoroutine(serverManager.PostPlayerData());
+            ServerManager.Instance.UpdatePlayerPosition(transform.position);
         }
     }
 
-    public void OnSnailTouched()
+    public void OnTriggerStay(Collider other)
     {
-        lives--;
+        if (!IsOwner) return;
 
-        if (lives <= 0)
+        Debug.Log("Snail touched: " + other.name);
+        if (other.CompareTag("Snail"))
         {
-            Debug.Log("You lost!");
-            // Optionally despawn or disable player
+            snailContactTime += Time.deltaTime;
+            health -= Time.deltaTime * 10f;
+
+            if (health <= 0)
+            {
+                Debug.Log("YOU LOST!");
+            }
+
+            ServerManager.Instance.UpdatePlayerHealth(health);
         }
-
-        score -= 10;
-        health -= 5;
-
-        serverManager.playerData.Score = score;
-        serverManager.playerData.PlayerHealth = health;
-
-        StartCoroutine(serverManager.PostPlayerData());
     }
 }
