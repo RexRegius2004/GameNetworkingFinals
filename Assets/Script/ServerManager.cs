@@ -3,16 +3,17 @@ using UnityEngine;
 using UnityEngine.Networking;
 using Newtonsoft.Json;
 
-
 public class ServerManager : MonoBehaviour
 {
-    private string serverUrl = "https://localhost:7047/api/data"; // <- Your local server URL
-    public PlayerData playerData;
+    public static ServerManager Instance;
 
-    void Start()
+    private void Awake()
     {
-        StartCoroutine(GetPlayerData());
+        if (Instance == null) Instance = this;
+        else Destroy(gameObject);
     }
+    public string serverUrl = "https://localhost:7047/api/data";
+    public PlayerData playerData;
 
     public IEnumerator GetPlayerData()
     {
@@ -25,79 +26,46 @@ public class ServerManager : MonoBehaviour
         if (request.result == UnityWebRequest.Result.Success)
         {
             string json = request.downloadHandler.text;
-            Debug.Log("Raw JSON Response:\n" + json);
+            Debug.Log("GET JSON: " + json);
 
             playerData = JsonConvert.DeserializeObject<PlayerData>(json);
-
-            Debug.Log("Parsed Player Name: " + playerData.PlayerName);
-            Debug.Log("Parsed Score: " + playerData.Score);
         }
-        else
-        {
-            Debug.LogError("GET Error: " + request.error);
-        }
-    }
-
-
-
-    public void UpdateDataToServer()
-    {
-        StartCoroutine(PostPlayerData());
+        else Debug.LogError("GET Error: " + request.error);
     }
 
     public IEnumerator PostPlayerData()
     {
-        string json = JsonUtility.ToJson(playerData);
-        byte[] jsonToSend = new System.Text.UTF8Encoding().GetBytes(json);
-
+        string json = JsonConvert.SerializeObject(playerData);
         UnityWebRequest request = new UnityWebRequest(serverUrl, "POST");
+        byte[] jsonToSend = new System.Text.UTF8Encoding().GetBytes(json);
         request.uploadHandler = new UploadHandlerRaw(jsonToSend);
         request.downloadHandler = new DownloadHandlerBuffer();
         request.SetRequestHeader("Content-Type", "application/json");
-        request.certificateHandler = new BypassCertificate(); // bypass HTTPS cert
+        request.certificateHandler = new BypassCertificate();
 
         yield return request.SendWebRequest();
 
         if (request.result == UnityWebRequest.Result.Success)
-        {
-            Debug.Log("Data Updated Successfully");
-        }
+            Debug.Log("POST success: " + json);
         else
-        {
             Debug.LogError("POST Error: " + request.error);
-        }
     }
 
-    //Testing Scripts
-
-    void Update()
+    public void UpdatePlayerHealth(float health)
     {
-        if (Input.GetKeyDown(KeyCode.U))
-        {
-            ModifyPlayerData(); // Press "U" to modify and update
-        }
-    }
-
-    public void ModifyPlayerData()
-    {
-        playerData.PlayerName = "UpdatedPlayer";
-        playerData.PlayerHealth = 100;
-        playerData.Score += 300;
-        playerData.PlayerPosition = new PlayerPosition { x = 3.2f, y = 3.0f, z = 3.5f };
-
-        // LOG BEFORE POSTING
-        Debug.Log("Modified: " + playerData.PlayerName);
-        Debug.Log("Modified: " + playerData.Score);
-        Debug.Log("Modified Pos: " + playerData.PlayerPosition.x);
-
+        playerData.PlayerHealth = (int)health;
         StartCoroutine(PostPlayerData());
-        StartCoroutine(ReFetchAfterDelay());
     }
 
-    private IEnumerator ReFetchAfterDelay()
+    public void UpdatePlayerPosition(Vector3 pos)
     {
-        yield return new WaitForSeconds(2f); // wait for POST to complete
-        StartCoroutine(GetPlayerData());
+        playerData.PlayerPosition = new PlayerPosition() { x = pos.x, y = pos.y, z = pos.z };
+        StartCoroutine(PostPlayerData());
     }
 
+    public void UpdatePlayerScore(int newScore)
+    {
+        playerData.Score = newScore;
+        StartCoroutine(PostPlayerData());
+    }
 }
